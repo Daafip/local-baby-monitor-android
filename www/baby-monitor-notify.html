@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baby Monitor</title>
+<style>
+  :root {
+    --bg: #0a0608;
+    --panel: #140b0e;
+    --line: #2a1418;
+    --dim: #7a5560;
+    --text: #d8c4c9;
+    --red: #ff3b30;
+    --red-soft: #b3262066;
+    --amber: #ffb020;
+    --green: #3ddc84;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+  }
+  header {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  header h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-right: auto;
+  }
+  input[type="text"] {
+    flex: 1 1 260px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 13px;
+  }
+  input[type="text"]:focus { outline: 1px solid var(--red-soft); border-color: var(--red-soft); }
+  select, button {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--dim); }
+  button.primary { background: #3d0f12; border-color: #6b1a1f; color: #ffd7d4; }
+  button.granted { border-color: var(--green); color: var(--green); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--red-soft); outline-offset: 1px; }
+
+  .monitor {
+    width: 100%;
+    max-width: 900px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    transition: box-shadow 0.3s;
+  }
+  .monitor.alert { box-shadow: 0 0 0 2px var(--red), 0 0 30px var(--red-soft); }
+
+  .videoWrap {
+    position: relative;
+    background: #000;
+    min-height: 240px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .videoWrap img { width: 100%; display: block; }
+  .videoWrap .placeholder { color: var(--dim); font-size: 13px; padding: 60px 20px; text-align: center; }
+
+  .hud {
+    position: absolute;
+    top: 8px; left: 8px;
+    display: flex; gap: 6px; align-items: center;
+    font-size: 11px;
+    background: #000000aa;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.err  { background: var(--red); }
+
+  .vizWrap { position: relative; background: #050304; border-top: 1px solid var(--line); }
+  canvas { display: block; width: 100%; height: 110px; }
+  .vizLabels {
+    position: absolute; top: 6px; right: 10px;
+    font-size: 11px; color: var(--dim);
+    display: flex; gap: 14px;
+  }
+  .vizLabels b { color: var(--text); font-weight: 600; }
+
+  .controls {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    gap: 10px 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--dim);
+  }
+  .controls label { display: flex; align-items: center; gap: 6px; }
+  input[type="range"] { accent-color: var(--red); width: 130px; }
+
+  #status {
+    width: 100%; max-width: 900px;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--dim);
+    white-space: pre-wrap;
+  }
+  #status .warn { color: var(--amber); }
+  @media (prefers-reduced-motion: reduce) { .monitor { transition: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Baby Monitor</h1>
+  <input type="text" id="baseUrl" placeholder="http://..." aria-label="Proxy base URL">
+  <select id="fmt" aria-label="Audio format">
+    <option value="wav">audio.wav</option>
+    <option value="opus">audio.opus</option>
+    <option value="aac">audio.aac</option>
+  </select>
+  <button class="primary" id="connectBtn">Connect</button>
+</header>
+
+<div class="monitor" id="monitor">
+  <div class="videoWrap" id="videoWrap">
+    <div class="placeholder">Enter the proxy address and press Connect.<br>Video uses /video (MJPEG), audio uses /audio.&lt;format&gt;.</div>
+  </div>
+  <div class="vizWrap">
+    <canvas id="viz" height="110" aria-label="Noise level visualization"></canvas>
+    <div class="vizLabels">
+      <span>level <b id="dbNow">–</b></span>
+      <span>peak <b id="dbPeak">–</b></span>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <label><input type="checkbox" id="muteChk" checked> mute speaker (analysis keeps running)</label>
+  <label>alert threshold <input type="range" id="thresh" min="0.02" max="0.5" step="0.01" value="0.15"> <span id="threshVal">0.15</span></label>
+  <button id="resetPeak">reset peak</button>
+</div>
+
+<div class="controls">
+  <button id="notifyBtn">🔔 enable notifications</button>
+  <label><input type="checkbox" id="beepChk"> alarm beep on this device</label>
+  <label><input type="checkbox" id="vibrateChk" checked> vibrate (mobile)</label>
+  <label>hold time <input type="range" id="holdTime" min="0.3" max="5" step="0.1" value="1.5"> <span id="holdVal">1.5</span>s</label>
+  <label>cooldown <input type="range" id="cooldown" min="5" max="120" step="5" value="30"> <span id="cdVal">30</span>s</label>
+</div>
+
+<div class="controls">
+  <span>camera</span>
+  <label><input type="checkbox" id="torchChk"> 🔦 flash</label>
+  <label><input type="checkbox" id="nightChk"> night vision</label>
+  <label>brightness <input type="range" id="nvGain" min="1" max="10" step="0.5" value="1"> <span id="nvGainVal">1.0</span>×</label>
+</div>
+
+<div id="status"></div>
+
+<audio id="player" crossorigin="anonymous" style="display:none"></audio>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status');
+  const canvas = $('viz');
+  const ctx2d = canvas.getContext('2d');
+  const monitor = $('monitor');
+  const player = $('player');
+
+  let audioCtx = null, analyser = null, gainNode = null, srcNode = null;
+  let history = [];
+  let peak = 0;
+  let silenceFrames = 0, corsWarned = false;
+  let running = false;
+
+  // --- alert state ---
+  let loudSince = null;        // timestamp when rms first crossed threshold
+  let lastAlert = 0;           // timestamp of last fired alert
+  let titleFlasher = null;
+  const baseTitle = document.title;
+
+  function log(msg, warn = false) {
+    const line = document.createElement('div');
+    if (warn) line.className = 'warn';
+    line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+    statusEl.prepend(line);
+    while (statusEl.children.length > 6) statusEl.lastChild.remove();
+  }
+
+  // ---------------- notifications ----------------
+  // Android Chrome refuses `new Notification()` — popups there must go through
+  // a service worker's showNotification(), and service workers need a secure
+  // context (https, localhost, or the origin whitelisted via chrome://flags).
+  let swReg = null;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => navigator.serviceWorker.ready)
+      .then(r => { swReg = r; })
+      .catch(e => log('No service worker (' + e.message + '). Desktop popups still work; for Android Chrome press 🔔 for the fix.'));
+  }
+
+  function updateNotifyBtn() {
+    const btn = $('notifyBtn');
+    if (!('Notification' in window)) {
+      btn.textContent = '🔔 not supported here';
+      btn.disabled = true;
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      btn.textContent = '🔔 notifications on';
+      btn.classList.add('granted');
+    } else if (Notification.permission === 'denied') {
+      btn.textContent = '🔔 blocked by browser';
+    } else {
+      btn.textContent = '🔔 enable notifications';
+    }
+  }
+
+  $('notifyBtn').addEventListener('click', async () => {
+    if (!('Notification' in window)) {
+      log('This browser does not expose the Notification API on this page (often because the page is plain http). The beep + vibrate fallbacks still work.', true);
+      return;
+    }
+    if (!window.isSecureContext) {
+      log('This page is plain http, so Android Chrome blocks popups. Phone fix: open chrome://flags/#unsafely-treat-insecure-origin-as-secure, add ' + location.origin + ', relaunch Chrome, press 🔔 again. Beep + vibrate work without this.', true);
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        log('Notifications enabled.');
+        fireNotification('Notifications active', 'You will get a popup when noise exceeds the threshold.');
+      } else {
+        log('Notification permission: ' + perm, true);
+      }
+    } catch (e) {
+      log('Notification request failed: ' + e.message, true);
+    }
+    updateNotifyBtn();
+  });
+
+  async function fireNotification(title, body) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+    const opts = { body, tag: 'nursery-noise', renotify: true, vibrate: [300, 150, 300] };
+    // Preferred path (and the only one that works on Android Chrome)
+    if (swReg && swReg.showNotification) {
+      try { await swReg.showNotification(title, opts); return true; } catch (e) { /* try constructor */ }
+    }
+    try {
+      // Desktop browsers: direct constructor
+      const n = new Notification(title, opts);
+      n.onclick = () => { window.focus(); n.close(); };
+      return true;
+    } catch (e) {
+      log('Popup notification unavailable on this device (' + e.name + '). Using beep/vibrate/title-flash instead.', true);
+      return false;
+    }
+  }
+
+  function beep() {
+    if (!audioCtx) return;
+    // separate path to destination, bypasses the stream mute
+    const t = audioCtx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, t + i * 0.35);
+      g.gain.exponentialRampToValueAtTime(0.4, t + i * 0.35 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.35 + 0.28);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(t + i * 0.35);
+      osc.stop(t + i * 0.35 + 0.3);
+    }
+  }
+
+  function flashTitle() {
+    if (titleFlasher) return;
+    let on = false, count = 0;
+    titleFlasher = setInterval(() => {
+      document.title = on ? baseTitle : '🔴 NOISE DETECTED';
+      on = !on;
+      if (++count > 20) { clearInterval(titleFlasher); titleFlasher = null; document.title = baseTitle; }
+    }, 700);
+  }
+
+  async function triggerAlert(rms) {
+    lastAlert = performance.now();
+    const msg = 'Noise level ' + rms.toFixed(3) + ' exceeded threshold ' + $('thresh').value;
+    log('ALERT: ' + msg);
+
+    if ($('vibrateChk').checked && navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 600]);
+    flashTitle();
+    const notified = await fireNotification('🍼 Nursery noise', msg);
+    // Never fail silent: beep if asked for, or if the popup didn't go through.
+    if ($('beepChk').checked || !notified) beep();
+  }
+
+  function checkAlert(rms) {
+    const th = parseFloat($('thresh').value);
+    const holdMs = parseFloat($('holdTime').value) * 1000;
+    const cooldownMs = parseFloat($('cooldown').value) * 1000;
+    const now = performance.now();
+
+    if (rms > th) {
+      if (loudSince === null) loudSince = now;
+      if (now - loudSince >= holdMs && now - lastAlert >= cooldownMs) {
+        triggerAlert(rms);
+      }
+    } else {
+      loudSince = null;
+    }
+  }
+
+  // ---------------- camera remote control ----------------
+  const getBase = () => $('baseUrl').value.trim().replace(/\/+$/, '');
+
+  function camCmd(path, label) {
+    const base = getBase();
+    if (!/^https?:\/\//.test(base)) { log('Enter the proxy address first — camera command not sent.', true); return; }
+    fetch(base + path, { method: 'POST' })
+      .then(r => log(label + (r.ok ? '' : ' — HTTP ' + r.status), !r.ok))
+      .catch(() =>
+        // Opaque retry: command still reaches the phone even if CORS hides the response
+        fetch(base + path, { method: 'POST', mode: 'no-cors' })
+          .then(() => log(label + ' (sent, response unreadable — check proxy CORS headers)'))
+          .catch(e => log(label + ' failed: ' + e.message, true))
+      );
+  }
+
+  // ---------------- connection ----------------
+  let playToken = 0;
+
+  function connect() {
+    const base = getBase();
+    if (!/^https?:\/\//.test(base)) { log('URL must start with http://', true); return; }
+    const fmt = $('fmt').value;
+
+    const wrap = $('videoWrap');
+    wrap.innerHTML = '';
+    const hud = document.createElement('div');
+    hud.className = 'hud';
+    hud.innerHTML = '<span class="dot" id="vidDot"></span><span id="vidTxt">video…</span>';
+    const img = document.createElement('img');
+    img.alt = 'Live video stream';
+    img.src = base + '/video?t=' + Date.now();
+    img.onload  = () => { $('vidDot').className = 'dot live'; $('vidTxt').textContent = 'live'; };
+    img.onerror = () => { $('vidDot').className = 'dot err';  $('vidTxt').textContent = 'video failed'; log('Video stream failed. Check nginx and IP Webcam on the phone.', true); };
+    wrap.appendChild(img);
+    wrap.appendChild(hud);
+
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.6;
+      gainNode = audioCtx.createGain();
+      srcNode = audioCtx.createMediaElementSource(player);
+      srcNode.connect(analyser);
+      analyser.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+    }
+    audioCtx.resume();
+    gainNode.gain.value = $('muteChk').checked ? 0 : 1;
+
+    silenceFrames = 0; corsWarned = false; peak = 0; history = []; loudSince = null;
+    const myToken = ++playToken;   // reconnects supersede any pending play()
+    player.pause();
+    player.src = base + '/audio.' + fmt + '?t=' + Date.now();
+    player.play()
+      .then(() => { if (myToken === playToken) log('Audio connected (' + fmt + ').'); })
+      .catch(e => {
+        // AbortError just means a newer connect interrupted this one — not a failure
+        if (myToken !== playToken || e.name === 'AbortError') return;
+        log('Audio failed to start: ' + e.message + '. Try another format.', true);
+      });
+
+    if (!running) { running = true; requestAnimationFrame(draw); }
+  }
+
+  function fitCanvas() {
+    const w = canvas.clientWidth;
+    if (canvas.width !== w) canvas.width = w;
+  }
+
+  const freqData = () => { const a = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(a); return a; };
+  const timeData = () => { const a = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(a); return a; };
+
+  function draw() {
+    requestAnimationFrame(draw);
+    if (!analyser) return;
+    fitCanvas();
+    const W = canvas.width, H = canvas.height;
+
+    const td = timeData();
+    let sum = 0;
+    for (let i = 0; i < td.length; i++) sum += td[i] * td[i];
+    const rms = Math.sqrt(sum / td.length);
+    if (rms > peak) peak = rms;
+
+    if (!player.paused && player.currentTime > 1) {
+      if (rms === 0) { silenceFrames++; } else { silenceFrames = 0; }
+      if (silenceFrames > 300 && !corsWarned) {
+        corsWarned = true;
+        log('Analyser reads pure silence — CORS may still be blocking the stream data. Check the nginx proxy headers.', true);
+      }
+    }
+
+    checkAlert(rms);
+
+    history.push(rms);
+    const maxHist = Math.floor(W / 2);
+    if (history.length > maxHist) history.splice(0, history.length - maxHist);
+
+    ctx2d.fillStyle = '#050304';
+    ctx2d.fillRect(0, 0, W, H);
+
+    const fd = freqData();
+    const bars = 64, bw = W / bars;
+    for (let i = 0; i < bars; i++) {
+      const v = fd[Math.floor(i * fd.length / bars / 2)] / 255;
+      const h = v * 50;
+      ctx2d.fillStyle = 'rgba(255,59,48,' + (0.15 + v * 0.5) + ')';
+      ctx2d.fillRect(i * bw + 1, 55 - h, bw - 2, h);
+    }
+
+    const mid = 85, amp = 24;
+    ctx2d.strokeStyle = '#ff3b30';
+    ctx2d.lineWidth = 1.5;
+    ctx2d.beginPath();
+    for (let i = 0; i < history.length; i++) {
+      const x = W - (history.length - i) * 2;
+      const y = mid - Math.min(history[i] * 4, 1) * amp;
+      i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+    }
+    ctx2d.stroke();
+
+    const th = parseFloat($('thresh').value);
+    const ty = mid - Math.min(th * 4, 1) * amp;
+    ctx2d.strokeStyle = '#ffb02066';
+    ctx2d.setLineDash([4, 4]);
+    ctx2d.beginPath(); ctx2d.moveTo(0, ty); ctx2d.lineTo(W, ty); ctx2d.stroke();
+    ctx2d.setLineDash([]);
+
+    $('dbNow').textContent = rms.toFixed(3);
+    $('dbPeak').textContent = peak.toFixed(3);
+
+    monitor.classList.toggle('alert', rms > th);
+  }
+
+  $('connectBtn').addEventListener('click', connect);
+  $('baseUrl').addEventListener('keydown', e => { if (e.key === 'Enter') connect(); });
+  $('muteChk').addEventListener('change', () => { if (gainNode) gainNode.gain.value = $('muteChk').checked ? 0 : 1; });
+  $('thresh').addEventListener('input', () => $('threshVal').textContent = $('thresh').value);
+  $('holdTime').addEventListener('input', () => $('holdVal').textContent = $('holdTime').value);
+  $('cooldown').addEventListener('input', () => $('cdVal').textContent = $('cooldown').value);
+  $('resetPeak').addEventListener('click', () => { peak = 0; });
+  $('torchChk').addEventListener('change', () =>
+    camCmd($('torchChk').checked ? '/enabletorch' : '/disabletorch',
+           'Flash ' + ($('torchChk').checked ? 'on' : 'off')));
+  $('nightChk').addEventListener('change', () =>
+    camCmd('/settings/night_vision?set=' + ($('nightChk').checked ? 'on' : 'off'),
+           'Night vision ' + ($('nightChk').checked ? 'on' : 'off')));
+  $('nvGain').addEventListener('input', () => $('nvGainVal').textContent = parseFloat($('nvGain').value).toFixed(1));
+  $('nvGain').addEventListener('change', () =>
+    camCmd('/settings/night_vision_gain?set=' + $('nvGain').value,
+           'Brightness gain ' + $('nvGain').value + ($('nightChk').checked ? '' : ' (takes effect when night vision is on)')));
+  updateNotifyBtn();
+  $('baseUrl').value = window.location.origin;
+})();
+</script>
+</body>
+</html>
