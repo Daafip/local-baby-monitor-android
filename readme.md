@@ -42,8 +42,8 @@ the same origin as the streams, so the analysis (and therefore the alerts) actua
   A *cooldown* prevents alert spam
 - **Loud-time counters**: how much time the noise spent above the threshold in the past
   **1 minute** and **5 minutes** — see at a glance whether fussing is building up or dying down
-- **Remote camera control** from the viewer: flashlight (torch), night vision, and brightness
-  (night-vision gain)
+- **Remote camera control** from the viewer: flashlight (torch), night vision, brightness
+  (night-vision gain), and rotation
 - **Mute that keeps measuring**: silence the speaker on the viewing device while the analysis and
   alerts keep running
 
@@ -178,6 +178,7 @@ Press **Connect**. Video should appear within a second or two and the status lin
 | **🔦 flash** | Toggles the camera phone's flashlight (`/enabletorch`, `/disabletorch`) |
 | **night vision** | Toggles IP Webcam's night-vision mode (`/settings/night_vision?set=on\|off`) |
 | **brightness** | Night-vision gain, 1–10× (`/settings/night_vision_gain?set=…`) — takes effect while night vision is on |
+| **rotate** | Camera orientation: landscape, portrait, upside down, upside down (portrait) (`/settings/orientation?set=…`) — use this if the phone is mounted sideways or upside down |
 | **loud 1m / 5m** | Time spent above the threshold during the past 1 / 5 minutes (`m:ss`) |
 
 An alert = beep (if enabled) + vibration + flashing tab title + red glow around the video. Alerts
