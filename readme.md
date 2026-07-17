@@ -100,7 +100,7 @@ ip -4 addr show wlan0     # note the phone's Wi-Fi IP
 On the **computer** (same Wi-Fi):
 
 ```sh
-ssh -p 8022 <phone-ip>
+ssh -p 8022 user@<phone-ip>
 ```
 
 Termux is single-user, so the username in the login is ignored — whatever your computer sends is
@@ -129,6 +129,12 @@ The nginx config serves the page from `~/www/`, so copy it there:
 mkdir -p ~/www
 cp www/baby-monitor-notify.html ~/www/
 ```
+
+should you do any changes use 
+
+```sh
+nginx -s reload
+``` 
 
 ### 4. Start the proxy
 
