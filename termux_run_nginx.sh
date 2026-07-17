@@ -38,13 +38,6 @@ http {
             alias /data/data/com.termux/files/home/www/baby-monitor-notify.html;
             default_type text/html;
         }
-        # service worker (needed for notification popups on Android Chrome);
-        # must be served here, not proxied to IP Webcam
-        location = /sw.js {
-            alias /data/data/com.termux/files/home/www/sw.js;
-            default_type application/javascript;
-            add_header Cache-Control 'no-cache';
-        }
         location / {
             # --- CORS headers ---
             add_header 'Access-Control-Allow-Origin' '*' always;

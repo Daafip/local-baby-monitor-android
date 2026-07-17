@@ -163,6 +163,8 @@
     <div class="vizLabels">
       <span>level <b id="dbNow">–</b></span>
       <span>peak <b id="dbPeak">–</b></span>
+      <span>loud 1m <b id="loud1">0:00</b></span>
+      <span>loud 5m <b id="loud5">0:00</b></span>
     </div>
   </div>
 </div>
@@ -174,7 +176,6 @@
 </div>
 
 <div class="controls">
-  <button id="notifyBtn">🔔 enable notifications</button>
   <label><input type="checkbox" id="beepChk"> alarm beep on this device</label>
   <label><input type="checkbox" id="vibrateChk" checked> vibrate (mobile)</label>
   <label>hold time <input type="range" id="holdTime" min="0.3" max="5" step="0.1" value="1.5"> <span id="holdVal">1.5</span>s</label>
@@ -221,75 +222,6 @@
     while (statusEl.children.length > 6) statusEl.lastChild.remove();
   }
 
-  // ---------------- notifications ----------------
-  // Android Chrome refuses `new Notification()` — popups there must go through
-  // a service worker's showNotification(), and service workers need a secure
-  // context (https, localhost, or the origin whitelisted via chrome://flags).
-  let swReg = null;
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-      .then(() => navigator.serviceWorker.ready)
-      .then(r => { swReg = r; })
-      .catch(e => log('No service worker (' + e.message + '). Desktop popups still work; for Android Chrome press 🔔 for the fix.'));
-  }
-
-  function updateNotifyBtn() {
-    const btn = $('notifyBtn');
-    if (!('Notification' in window)) {
-      btn.textContent = '🔔 not supported here';
-      btn.disabled = true;
-      return;
-    }
-    if (Notification.permission === 'granted') {
-      btn.textContent = '🔔 notifications on';
-      btn.classList.add('granted');
-    } else if (Notification.permission === 'denied') {
-      btn.textContent = '🔔 blocked by browser';
-    } else {
-      btn.textContent = '🔔 enable notifications';
-    }
-  }
-
-  $('notifyBtn').addEventListener('click', async () => {
-    if (!('Notification' in window)) {
-      log('This browser does not expose the Notification API on this page (often because the page is plain http). The beep + vibrate fallbacks still work.', true);
-      return;
-    }
-    if (!window.isSecureContext) {
-      log('This page is plain http, so Android Chrome blocks popups. Phone fix: open chrome://flags/#unsafely-treat-insecure-origin-as-secure, add ' + location.origin + ', relaunch Chrome, press 🔔 again. Beep + vibrate work without this.', true);
-    }
-    try {
-      const perm = await Notification.requestPermission();
-      if (perm === 'granted') {
-        log('Notifications enabled.');
-        fireNotification('Notifications active', 'You will get a popup when noise exceeds the threshold.');
-      } else {
-        log('Notification permission: ' + perm, true);
-      }
-    } catch (e) {
-      log('Notification request failed: ' + e.message, true);
-    }
-    updateNotifyBtn();
-  });
-
-  async function fireNotification(title, body) {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return false;
-    const opts = { body, tag: 'nursery-noise', renotify: true, vibrate: [300, 150, 300] };
-    // Preferred path (and the only one that works on Android Chrome)
-    if (swReg && swReg.showNotification) {
-      try { await swReg.showNotification(title, opts); return true; } catch (e) { /* try constructor */ }
-    }
-    try {
-      // Desktop browsers: direct constructor
-      const n = new Notification(title, opts);
-      n.onclick = () => { window.focus(); n.close(); };
-      return true;
-    } catch (e) {
-      log('Popup notification unavailable on this device (' + e.name + '). Using beep/vibrate/title-flash instead.', true);
-      return false;
-    }
-  }
-
   function beep() {
     if (!audioCtx) return;
     // separate path to destination, bypasses the stream mute
@@ -318,23 +250,54 @@
     }, 700);
   }
 
-  async function triggerAlert(rms) {
+  function triggerAlert(rms) {
     lastAlert = performance.now();
-    const msg = 'Noise level ' + rms.toFixed(3) + ' exceeded threshold ' + $('thresh').value;
-    log('ALERT: ' + msg);
+    log('ALERT: noise level ' + rms.toFixed(3) + ' exceeded threshold ' + $('thresh').value);
 
     if ($('vibrateChk').checked && navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 600]);
+    if ($('beepChk').checked) beep();
     flashTitle();
-    const notified = await fireNotification('🍼 Nursery noise', msg);
-    // Never fail silent: beep if asked for, or if the popup didn't go through.
-    if ($('beepChk').checked || !notified) beep();
   }
+
+  // ---------------- loud-time tracking ----------------
+  // Rolling 5-minute window of "time spent above threshold",
+  // stored as per-second buckets of loud milliseconds.
+  const LOUD_WINDOW = 300;
+  const loudMs  = new Float32Array(LOUD_WINDOW);
+  const loudSec = new Float64Array(LOUD_WINDOW);   // which absolute second each bucket holds
+  let lastFrame = null;
+
+  function trackLoud(isLoud, now) {
+    const dt = lastFrame === null ? 0 : Math.min(now - lastFrame, 1000);
+    lastFrame = now;
+    if (!isLoud || dt <= 0) return;
+    const sec = Math.floor(now / 1000);
+    const i = sec % LOUD_WINDOW;
+    if (loudSec[i] !== sec) { loudSec[i] = sec; loudMs[i] = 0; }
+    loudMs[i] += dt;
+  }
+
+  function loudTotal(seconds, now) {
+    const cur = Math.floor(now / 1000);
+    let ms = 0;
+    for (let s = Math.max(0, cur - seconds + 1); s <= cur; s++) {
+      const i = s % LOUD_WINDOW;
+      if (loudSec[i] === s) ms += loudMs[i];
+    }
+    return ms / 1000;
+  }
+
+  const fmtDur = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
   function checkAlert(rms) {
     const th = parseFloat($('thresh').value);
     const holdMs = parseFloat($('holdTime').value) * 1000;
     const cooldownMs = parseFloat($('cooldown').value) * 1000;
     const now = performance.now();
+
+    trackLoud(rms > th, now);
+    $('loud1').textContent = fmtDur(loudTotal(60, now));
+    $('loud5').textContent = fmtDur(loudTotal(300, now));
 
     if (rms > th) {
       if (loudSince === null) loudSince = now;
@@ -499,7 +462,6 @@
   $('nvGain').addEventListener('change', () =>
     camCmd('/settings/night_vision_gain?set=' + $('nvGain').value,
            'Brightness gain ' + $('nvGain').value + ($('nightChk').checked ? '' : ' (takes effect when night vision is on)')));
-  updateNotifyBtn();
   $('baseUrl').value = window.location.origin;
 })();
 </script>
