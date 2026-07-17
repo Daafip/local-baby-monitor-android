@@ -76,8 +76,8 @@ Install Termux (F-Droid/GitHub APK), open it, then:
 
 ```sh
 pkg install -y git
-git clone https://github.com/<your-username>/<this-repo>.git
-cd <this-repo>
+git clone https://github.com/Daafip/local-baby-monitor-android.git
+cd local-baby-monitor-android
 ```
 
 (If you downloaded the repo as a ZIP into `Downloads` instead, run `termux-setup-storage` once and
