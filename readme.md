@@ -14,7 +14,7 @@ No cloud, no accounts, no apps on the viewing device. Everything stays on your L
  │    /video  (MJPEG)           │                 │  monitor                   │
  │    /audio.wav|.opus|.aac     │    Wi-Fi LAN    │   • live video + audio     │
  │          ▲                   │ ◄─────────────► │   • noise meter + graph    │
- │          │ localhost         │   http :8081    │   • alerts (beep/vibrate)  │
+ │          │ localhost         │   http :8081    │   • alerts (title/glow)    │
  │  Termux: nginx     :8081     │                 │   • flash / night vision   │
  │    reverse proxy + CORS      │                 └────────────────────────────┘
  │    serves the monitor page   │
@@ -38,8 +38,7 @@ the same origin as the streams, so the analysis (and therefore the alerts) actua
 - **Live video** (MJPEG) and **live audio** (WAV/Opus/AAC, selectable) in any modern browser
 - **Noise meter**: RMS level, peak hold, scrolling waveform, and a live frequency spectrum
 - **Noise alerts**: when the level stays above an adjustable threshold for a configurable *hold
-  time*, the page beeps (optional), vibrates (on phones), flashes the tab title, and glows red.
-  A *cooldown* prevents alert spam
+  time*, the page flashes the tab title and glows red. A *cooldown* prevents alert spam
 - **Loud-time counters**: how much time the noise spent above the threshold in the past
   **1 minute** and **5 minutes** — see at a glance whether fussing is building up or dying down
 - **Remote camera control** from the viewer: flashlight (torch), night vision, brightness
@@ -177,8 +176,6 @@ Press **Connect**. Video should appear within a second or two and the status lin
 | **mute speaker** | Silences playback on the viewing device — noise analysis and alerts keep running |
 | **alert threshold** | Noise level that counts as "loud". Shown as the dashed line on the graph — set it just above the room's background noise |
 | **reset peak** | Clears the peak-hold value |
-| **alarm beep** | Play a triple beep on the viewing device when an alert fires |
-| **vibrate** | Vibrate on alert (phones/tablets) |
 | **hold time** | The level must stay above the threshold this long before an alert fires — filters out door clicks and coughs |
 | **cooldown** | Minimum time between alerts |
 | **🔦 flash** | Toggles the camera phone's flashlight (`/enabletorch`, `/disabletorch`) |
@@ -187,10 +184,10 @@ Press **Connect**. Video should appear within a second or two and the status lin
 | **rotate** | Camera orientation: landscape, portrait, upside down, upside down (portrait) (`/settings/orientation?set=…`) — use this if the phone is mounted sideways or upside down |
 | **loud 1m / 5m** | Time spent above the threshold during the past 1 / 5 minutes (`m:ss`) |
 
-An alert = beep (if enabled) + vibration + flashing tab title + red glow around the video. Alerts
-are deliberately kept on-page (no push notifications): browser push requires HTTPS and a service
-worker, which is disproportionate for a LAN page — keep the tab open (screen on) on the viewing
-device instead.
+An alert = flashing tab title + red glow around the video, plus the loud 1m/5m counters climbing.
+Alerts are deliberately kept on-page (no push notifications, no sound): browser push requires HTTPS
+and a service worker, which is disproportionate for a LAN page — keep the tab open (screen on) on
+the viewing device instead.
 
 ## Keeping it running all night
 
