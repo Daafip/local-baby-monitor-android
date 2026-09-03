@@ -19,8 +19,6 @@ for arg in "$@"; do
     esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 # 1. Optionally update packages, then install nginx
 if [ "$UPDATE" = true ]; then
     pkg update -y && pkg upgrade -y
@@ -32,15 +30,7 @@ NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
 # 2. Back up the original config (only once)
 [ -f "$NGINX_CONF" ] && [ ! -f "$NGINX_CONF.bak" ] && cp "$NGINX_CONF" "$NGINX_CONF.bak"
 
-# 3. Install/refresh the monitor page served at /monitor.
-#    Without this, /monitor 404s whenever the manual "cp www/... ~/www/" step
-#    from the README hasn't been (re-)done, e.g. after pulling repo updates.
-mkdir -p ~/www
-if [ -f "$SCRIPT_DIR/www/baby-monitor-notify.html" ]; then
-    cp "$SCRIPT_DIR/www/baby-monitor-notify.html" ~/www/baby-monitor-notify.html
-fi
-
-# 4. Write the reverse proxy config
+# 3. Write the reverse proxy config
 cat << 'EOF' > "$NGINX_CONF"
 worker_processes  1;
 
@@ -60,7 +50,7 @@ http {
 
         # host page
         location = /monitor {
-            alias /data/data/com.termux/files/home/www/baby-monitor-notify.html;
+            alias __HOME__/www/baby-monitor-notify.html;
             default_type text/html;
         }
         location / {
@@ -104,10 +94,14 @@ http {
 }
 EOF
 
-# 5. Validate config
+# nginx variables like $host must stay literal in the heredoc above, so the
+# home directory is substituted afterwards instead of via shell expansion.
+sed -i "s|__HOME__|${HOME}|" "$NGINX_CONF"
+
+# 4. Validate config
 nginx -t
 
-# 6. Start (or reload if already running)
+# 5. Start (or reload if already running)
 if pgrep -x nginx > /dev/null; then
     nginx -s reload
     echo "nginx reloaded"
@@ -116,10 +110,10 @@ else
     echo "nginx started"
 fi
 
-# 7. Keep Android from killing the process
+# 6. Keep Android from killing the process
 termux-wake-lock
 
-# 8. Auto-start on boot (requires the Termux:Boot app from F-Droid)
+# 7. Auto-start on boot (requires the Termux:Boot app from F-Droid)
 mkdir -p ~/.termux/boot
 cat << 'EOF' > ~/.termux/boot/start-proxy.sh
 #!/data/data/com.termux/files/usr/bin/bash
@@ -128,7 +122,7 @@ nginx
 EOF
 chmod +x ~/.termux/boot/start-proxy.sh
 
-# 9. Summary
+# 8. Summary
 IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "<phone-ip>")
 echo "------------------------------------------------"
 echo "✅ Reverse proxy running"
