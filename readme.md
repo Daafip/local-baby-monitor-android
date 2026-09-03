@@ -112,7 +112,7 @@ Nice-to-haves:
 ssh-copy-id -p 8022 <phone-ip>
 
 # start sshd automatically after a reboot (requires Termux:Boot; run on the phone
-# after step 4, which creates this boot script):
+# after step 3, which creates this boot script):
 echo 'sshd' >> ~/.termux/boot/start-proxy.sh
 ```
 
@@ -120,41 +120,42 @@ echo 'sshd' >> ~/.termux/boot/start-proxy.sh
 > running, anyone on the Wi-Fi can try to log in — set a strong password or switch to key-only
 > authentication (`PasswordAuthentication no` in `$PREFIX/etc/ssh/sshd_config`).
 
-### 3. Install the monitor page
-
-The nginx config serves the page from `~/www/`, so copy it there:
-
-```sh
-mkdir -p ~/www
-cp www/baby-monitor-notify.html ~/www/
-```
-
-should you do any changes use 
-
-```sh
-nginx -s reload
-``` 
-
-### 4. Start the proxy
+### 3. Start the proxy
 
 ```sh
 bash termux_run_nginx.sh
 ```
 
+Pass `--update` if you also want it to run `pkg update && pkg upgrade` first (skipped by
+default so re-running the script doesn't unexpectedly pull in package upgrades):
+
+```sh
+bash termux_run_nginx.sh --update
+```
+
 The script is idempotent (safe to re-run) and does the following:
 
-- installs `nginx` and `termux-api` via `pkg`
+- optionally updates packages (only with `--update`), then installs `nginx` and `termux-api`
+  via `pkg`
 - backs up the stock nginx config once, then writes the reverse-proxy config to
   `$PREFIX/etc/nginx/nginx.conf`:
   - `:8081 → 127.0.0.1:8080` with CORS headers and response buffering disabled
     (buffering breaks MJPEG/audio streaming)
   - `GET /monitor` → serves `~/www/baby-monitor-notify.html`
+- copies `www/baby-monitor-notify.html` from the repo into `~/www/` on every run, so the
+  monitor page can't go stale or 404 because a manual copy step was missed
 - starts nginx (or reloads it if already running)
 - takes a `termux-wake-lock` so Android doesn't kill the proxy
 - installs a `~/.termux/boot/start-proxy.sh` script (used by Termux:Boot, if installed)
 - prints the phone's Wi-Fi IP and the URL to open
 
-### 5. Open the monitor
+should you make manual changes to `~/www/baby-monitor-notify.html`, apply them with:
+
+```sh
+nginx -s reload
+```
+
+### 4. Open the monitor
 
 On the viewing device, browse to:
 

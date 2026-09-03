@@ -4,10 +4,27 @@ set -e
 # ================================================================
 # IP Webcam CORS reverse proxy for Termux
 # nginx listens on :8081  ->  proxies to IP Webcam on :8080
+#
+# Usage: bash termux_run_nginx.sh [--update]
+#   --update   also run `pkg update && pkg upgrade` before installing.
+#              Skipped by default so re-running this script doesn't
+#              pull in package upgrades unexpectedly.
 # ================================================================
 
-# 1. Update packages and install nginx
-pkg update -y && pkg upgrade -y
+UPDATE=false
+for arg in "$@"; do
+    case "$arg" in
+        --update) UPDATE=true ;;
+        *) echo "Unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 1. Optionally update packages, then install nginx
+if [ "$UPDATE" = true ]; then
+    pkg update -y && pkg upgrade -y
+fi
 pkg install -y nginx termux-api
 
 NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
@@ -15,7 +32,15 @@ NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
 # 2. Back up the original config (only once)
 [ -f "$NGINX_CONF" ] && [ ! -f "$NGINX_CONF.bak" ] && cp "$NGINX_CONF" "$NGINX_CONF.bak"
 
-# 3. Write the reverse proxy config
+# 3. Install/refresh the monitor page served at /monitor.
+#    Without this, /monitor 404s whenever the manual "cp www/... ~/www/" step
+#    from the README hasn't been (re-)done, e.g. after pulling repo updates.
+mkdir -p ~/www
+if [ -f "$SCRIPT_DIR/www/baby-monitor-notify.html" ]; then
+    cp "$SCRIPT_DIR/www/baby-monitor-notify.html" ~/www/baby-monitor-notify.html
+fi
+
+# 4. Write the reverse proxy config
 cat << 'EOF' > "$NGINX_CONF"
 worker_processes  1;
 
@@ -79,10 +104,10 @@ http {
 }
 EOF
 
-# 4. Validate config
+# 5. Validate config
 nginx -t
 
-# 5. Start (or reload if already running)
+# 6. Start (or reload if already running)
 if pgrep -x nginx > /dev/null; then
     nginx -s reload
     echo "nginx reloaded"
@@ -91,10 +116,10 @@ else
     echo "nginx started"
 fi
 
-# 6. Keep Android from killing the process
+# 7. Keep Android from killing the process
 termux-wake-lock
 
-# 7. Auto-start on boot (requires the Termux:Boot app from F-Droid)
+# 8. Auto-start on boot (requires the Termux:Boot app from F-Droid)
 mkdir -p ~/.termux/boot
 cat << 'EOF' > ~/.termux/boot/start-proxy.sh
 #!/data/data/com.termux/files/usr/bin/bash
@@ -103,7 +128,7 @@ nginx
 EOF
 chmod +x ~/.termux/boot/start-proxy.sh
 
-# 8. Summary
+# 9. Summary
 IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "<phone-ip>")
 echo "------------------------------------------------"
 echo "✅ Reverse proxy running"
